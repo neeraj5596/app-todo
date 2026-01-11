@@ -1,0 +1,198 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Todos - Multi-step</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 20px; }
+      .card { max-width:700px;margin:0 auto;padding:20px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.08); }
+      .step { display:none; }
+      .step.active { display:block; }
+      .controls { margin-top:12px; }
+      .btn { padding:10px 18px;border-radius:6px;border:none;cursor:pointer }
+      .btn-secondary { background:#eee }
+
+      /* Animated add button */
+      .add-btn { background: linear-gradient(90deg,#ff7a18,#af002d); color:#fff; font-weight:600; position:relative; overflow:hidden; }
+      .add-btn::after { content:""; position:absolute; left:-50%; top:0; width:50%; height:100%; background:rgba(255,255,255,0.12); transform:skewX(-25deg); transition:all .6s; }
+      .add-btn:hover::after { left:150%; }
+      .field { margin-bottom:10px; }
+      label { display:block;font-size:14px;margin-bottom:6px }
+      input, select, textarea { width:100%; padding:8px;border-radius:6px;border:1px solid #ddd }
+
+      ul.todo-list { margin-top:20px; padding-left:18px }
+      ul.todo-list li { padding:8px 0; border-bottom:1px solid #f0f0f0 }
+      .meta { color:#666; font-size:0.9em }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2>Quick Add</h2>
+      <form id="multiForm" method="post" action="">
+        {% csrf_token %}
+
+        <div class="step active" data-step="1">
+          <div class="field">
+            <label for="id_author">What's your name?</label>
+            {{ form.author }}
+          </div>
+          <div class="controls">
+            <button type="button" class="btn btn-secondary" onclick="nextStep()">Next</button>
+          </div>
+        </div>
+
+        <div class="step" data-step="2">
+          <div class="field">
+            <label for="id_feeling">How are you feeling today?</label>
+            {{ form.feeling }}
+          </div>
+          <div class="controls">
+            <button type="button" class="btn btn-secondary" onclick="prevStep()">Back</button>
+            <button type="button" class="btn btn-secondary" onclick="nextStep()">Next</button>
+          </div>
+        </div>
+
+        <div class="step" data-step="3">
+          <div class="field">
+            <label for="id_title">What's the plan today?</label>
+            {{ form.title }}
+          </div>
+          <div class="controls">
+            <button type="button" class="btn btn-secondary" onclick="prevStep()">Back</button>
+            <button id="addBtn" type="submit" class="btn add-btn">Add with flair ✨</button>
+          </div>
+        </div>
+      </form>
+
+      <h3 style="margin-top:24px">Your Todos</h3>
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px">
+        <div id="counts" style="color:#333">Total: 0 • Done: 0 • Pending: 0</div>
+        <div style="margin-left:auto">
+          <button class="btn btn-secondary" onclick="filterAll()">All</button>
+          <button class="btn btn-secondary" onclick="filterDone()">Done</button>
+          <button class="btn btn-secondary" onclick="filterPending()">Pending</button>
+        </div>
+      </div>
+      <ul class="todo-list">
+      {% for t in todos %}
+        <li class="todo-item" data-id="{{ t.pk }}" data-url="{% url 'todos:toggle' t.pk %}" data-delete-url="{% url 'todos:delete' t.pk %}">
+          <label style="display:flex;align-items:center;gap:12px">
+            <input type="checkbox" class="todo-checkbox" {% if t.completed %}checked{% endif %} />
+            <div style="flex:1">
+              <div class="title-wrap">
+                <span class="todo-title {% if t.completed %}done{% endif %}">{{ t.title }}</span>
+                <span class="feeling">{% if t.feeling == 'happy' %}😀{% elif t.feeling == 'sad' %}😢{% else %}😐{% endif %}</span>
+              </div>
+              <div class="meta">{{ t.get_feeling_display }} — By {{ t.author|default:"Neeraj" }} • {{ t.created|date:"SHORT_DATETIME_FORMAT" }}</div>
+            </div>
+          </label>
+          <button class="btn" style="margin-left:12px;background:#fff;border:1px solid #eee" onclick="deleteTodo(this)">🗑️</button>
+        </li>
+      {% empty %}
+        <li>No todos yet.</li>
+      {% endfor %}
+      </ul>
+    </div>
+
+    <script>
+      let current = 1
+      const total = 3
+      function showStep(n){
+        document.querySelectorAll('.step').forEach(s => s.classList.remove('active'))
+        const el = document.querySelector('.step[data-step="'+n+'"]')
+        if(el) el.classList.add('active')
+      }
+      function nextStep(){ if(current<total) { current++; showStep(current) } }
+      function prevStep(){ if(current>1) { current--; showStep(current) } }
+
+      // Minor button animation on submit
+      document.getElementById('multiForm').addEventListener('submit', function(e){
+        const btn = document.getElementById('addBtn')
+        btn.disabled = true
+        btn.style.transform = 'scale(0.98)'
+        btn.style.opacity = '0.9'
+      })
+
+      // Toggle done via AJAX and animate
+      function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+          const cookies = document.cookie.split(';');
+          for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+              cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+              break;
+            }
+          }
+        }
+        return cookieValue;
+      }
+
+      document.querySelectorAll('.todo-checkbox').forEach(cb => {
+        cb.addEventListener('change', async function(e){
+          const li = e.target.closest('.todo-item')
+          const url = li.dataset.url
+          const csrftoken = getCookie('csrftoken')
+          try{
+            const res = await fetch(url, { method: 'POST', headers: { 'X-CSRFToken': csrftoken } })
+            const data = await res.json()
+            if(data.ok){
+              const title = li.querySelector('.todo-title')
+              if(data.completed){
+                title.classList.add('done')
+                li.animate([{ transform: 'scale(1.02)' }, { transform: 'scale(1)' }], { duration: 220 })
+              } else {
+                title.classList.remove('done')
+                li.animate([{ opacity: 0.7 }, { opacity: 1 }], { duration: 220 })
+              }
+              updateCounts()
+            }
+          }catch(err){ console.error(err) }
+        })
+      })
+
+      // Delete todo via AJAX with confirm and animation
+      async function deleteTodo(btn){
+        if(!confirm('Delete this todo?')) return
+        const li = btn.closest('.todo-item')
+        const url = li.dataset.deleteUrl
+        const csrftoken = getCookie('csrftoken')
+        try{
+          const res = await fetch(url, { method: 'POST', headers: { 'X-CSRFToken': csrftoken } })
+          const data = await res.json()
+          if(data.ok){
+            await li.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(.98)' }], { duration: 220 }).finished
+            li.remove()
+            updateCounts()
+          }
+        }catch(err){ console.error(err) }
+      }
+
+      // Counts and filters
+      function updateCounts(){
+        const items = Array.from(document.querySelectorAll('.todo-item'))
+        const total = items.length
+        const done = items.filter(i => i.querySelector('.todo-checkbox').checked).length
+        const pending = total - done
+        document.getElementById('counts').textContent = `Total: ${total} • Done: ${done} • Pending: ${pending}`
+      }
+
+      function filterAll(){ document.querySelectorAll('.todo-item').forEach(i=> i.style.display='list-item') }
+      function filterDone(){ document.querySelectorAll('.todo-item').forEach(i=> i.style.display = i.querySelector('.todo-checkbox').checked ? 'list-item' : 'none') }
+      function filterPending(){ document.querySelectorAll('.todo-item').forEach(i=> i.style.display = i.querySelector('.todo-checkbox').checked ? 'none' : 'list-item') }
+
+      // Persist name locally
+      const authorInput = document.getElementById('id_author')
+      if(authorInput){
+        const saved = localStorage.getItem('todo_author')
+        if(saved) authorInput.value = saved
+        authorInput.addEventListener('input', ()=> localStorage.setItem('todo_author', authorInput.value))
+      }
+
+      // initial counts
+      updateCounts()
+    </script>
+  </body>
+</html>

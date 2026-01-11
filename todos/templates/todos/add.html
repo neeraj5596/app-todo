@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Add Todo</title>
+  </head>
+  <body>
+    <h1>Add Todo</h1>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit">Add</button>
+    </form>
+    <p><a href="/">Back to list</a></p>
+  </body>
+</html>
